@@ -1,0 +1,472 @@
+From 86fabc8653278bb753daf8a8a66b907eefb8c5f6 Mon Sep 17 00:00:00 2001
+From: Efraim Mendes do Nascimento <efraimmendes@hotmail.com>
+Date: Tue, 31 Jul 2018 00:06:46 -0300
+Subject: [PATCH] My Submission
+XOV:v2
+
+---
+ .../Controller/AnalyticsControllerTests.cs         | 224 +++++++++++++++++++++
+ CrossSolar.Tests/Providers/TestAsyncEnumerable.cs  |  23 +++
+ CrossSolar.Tests/Providers/TestAsyncEnumerator.cs  |  23 +++
+ .../Providers/TestAsyncQueryProvider.cs            |  35 ++++
+ CrossSolar/Controllers/AnalyticsController.cs      |  16 +-
+ CrossSolar/Controllers/PanelController.cs          |   4 +-
+ CrossSolar/CrossSolar.csproj                       |   5 +
+ CrossSolar/Domain/DayResult.cs                     |  21 ++
+ CrossSolar/Startup.cs                              |   2 +-
+ 9 files changed, 347 insertions(+), 6 deletions(-)
+ create mode 100644 CrossSolar.Tests/Controller/AnalyticsControllerTests.cs
+ create mode 100644 CrossSolar.Tests/Providers/TestAsyncEnumerable.cs
+ create mode 100644 CrossSolar.Tests/Providers/TestAsyncEnumerator.cs
+ create mode 100644 CrossSolar.Tests/Providers/TestAsyncQueryProvider.cs
+ create mode 100644 CrossSolar/Domain/DayResult.cs
+
+diff --git a/CrossSolar.Tests/Controller/AnalyticsControllerTests.cs b/CrossSolar.Tests/Controller/AnalyticsControllerTests.cs
+new file mode 100644
+index 0000000..f562c96
+--- /dev/null
++++ b/CrossSolar.Tests/Controller/AnalyticsControllerTests.cs
+@@ -0,0 +1,224 @@
++using System;
++using System.Collections.Generic;
++using System.Linq;
++using System.Threading.Tasks;
++using CrossSolar.Controllers;
++using CrossSolar.Domain;
++using CrossSolar.Models;
++using CrossSolar.Repository;
++using CrossSolar.Tests.Providers;
++using Microsoft.AspNetCore.Mvc;
++using Microsoft.EntityFrameworkCore;
++using Moq;
++using Xunit;
++
++namespace CrossSolar.Tests.Controller
++{
++    public class AnalyticsControllerTests
++    {
++        public AnalyticsControllerTests()
++        {  }
++
++        [Fact]
++        public async Task Register_ShouldGetPanel()
++        {
++            Mock<DbSet<Panel>> mockPanel = MockPanelRepository();
++
++            Mock<DbSet<OneHourElectricity>> mockOneHourElectricity = MockAnaliticsRepository();
++
++            var mockContext = new Mock<CrossSolarDbContext>();
++            mockContext.Setup(c => c.Set<Panel>()).Returns(mockPanel.Object);
++            mockContext.Setup(c => c.Set<OneHourElectricity>()).Returns(mockOneHourElectricity.Object);
++
++            var entityRepository = new PanelRepository(mockContext.Object);
++            var analyticsRepository = new AnalyticsRepository(mockContext.Object);
++
++            var _analyticsController = new AnalyticsController(analyticsRepository, entityRepository);
++
++            // Act
++            var result = await _analyticsController.Get("AAAA1111BBBB2222");
++
++            // Assert
++            Assert.NotNull(result);
++            var createdResult = result as OkObjectResult;
++            Assert.NotNull(createdResult);
++            Assert.Equal(200, createdResult.StatusCode);
++        }
++
++        [Fact]
++        public async Task Register_ShouldGetDayResult()
++        {
++            Mock<DbSet<Panel>> mockPanel = MockPanelRepository();
++            Mock<DbSet<OneHourElectricity>> mockOneHourElectricity = MockDayResult();
++
++            var mockContext = new Mock<CrossSolarDbContext>();
++            mockContext.Setup(c => c.Set<Panel>()).Returns(mockPanel.Object);
++            mockContext.Setup(c => c.Set<OneHourElectricity>()).Returns(mockOneHourElectricity.Object);
++
++            var entityRepository = new PanelRepository(mockContext.Object);
++            var analyticsRepository = new AnalyticsRepository(mockContext.Object);
++
++            var _analyticsController = new AnalyticsController(analyticsRepository, entityRepository);
++
++            // Act
++            var result = await _analyticsController.DayResults("AAAA1111BBBB2222");
++
++            // Assert
++            Assert.NotNull(result);
++            var createdResult = result as OkObjectResult;
++            Assert.NotNull(createdResult);
++            Assert.Equal(200, createdResult.StatusCode);
++
++        }
++
++        [Fact]
++        public async Task Register_ShouldInsertAnalytics()
++        {
++            var oneHourElectricityContent = new OneHourElectricityModel
++            {
++                Id = 1,
++                DateTime = new DateTime(2018, 1, 1),
++                KiloWatt = 1500
++            };
++
++           var _panelRepositoryMock = new Mock<IPanelRepository>();
++            var _analiticsRepositoryMock = new Mock<IAnalyticsRepository>();
++
++            var _analiticsController = new AnalyticsController(_analiticsRepositoryMock.Object, _panelRepositoryMock.Object);
++
++            // Arrange
++
++            // Act
++            var result = await _analiticsController.Post("AAAA1111BBBB2222",oneHourElectricityContent);
++
++            // Assert
++            Assert.NotNull(result);
++
++            var createdResult = result as CreatedResult;
++            Assert.NotNull(createdResult);
++            Assert.Equal(201, createdResult.StatusCode);
++        }
++
++
++        private static Mock<DbSet<Panel>> MockPanelRepository()
++        {
++            var panel = new List<Panel>() { new Panel
++                {
++                    Brand = "Areva",
++                    Latitude = 12.345678,
++                    Longitude = 98.7655432,
++                    Serial = "AAAA1111BBBB2222"
++                }
++            }.AsQueryable();
++
++            var mockSet = new Mock<DbSet<Panel>>();
++
++            mockSet.As<IAsyncEnumerable<Panel>>()
++                .Setup(m => m.GetEnumerator())
++                .Returns(new TestAsyncEnumerator<Panel>(panel.GetEnumerator()));
++
++            mockSet.As<IQueryable<Panel>>()
++                .Setup(m => m.Provider)
++                .Returns(new TestAsyncQueryProvider<Panel>(panel.Provider));
++
++            mockSet.As<IQueryable<Panel>>().Setup(m => m.Expression).Returns(panel.Expression);
++            mockSet.As<IQueryable<Panel>>().Setup(m => m.ElementType).Returns(panel.ElementType);
++            mockSet.As<IQueryable<Panel>>().Setup(m => m.GetEnumerator()).Returns(() => panel.GetEnumerator());
++            return mockSet;
++        }
++
++        private static Mock<DbSet<OneHourElectricity>> MockAnaliticsRepository()
++        {
++            var oneHourElectricity = new List<OneHourElectricity>() { new OneHourElectricity
++                {
++                    Id=1,
++                    PanelId = "AAAA1111BBBB2222",
++                    DateTime = new DateTime(2018,1,1),
++                    KiloWatt = 1500
++                }
++            }.AsQueryable();
++
++            var mockSet = new Mock<DbSet<OneHourElectricity>>();
++
++            mockSet.As<IAsyncEnumerable<OneHourElectricity>>()
++                .Setup(m => m.GetEnumerator())
++                .Returns(new TestAsyncEnumerator<OneHourElectricity>(oneHourElectricity.GetEnumerator()));
++
++            mockSet.As<IQueryable<Panel>>()
++                .Setup(m => m.Provider)
++                .Returns(new TestAsyncQueryProvider<OneHourElectricity>(oneHourElectricity.Provider));
++
++            mockSet.As<IQueryable<OneHourElectricity>>().Setup(m => m.Expression).Returns(oneHourElectricity.Expression);
++            mockSet.As<IQueryable<OneHourElectricity>>().Setup(m => m.ElementType).Returns(oneHourElectricity.ElementType);
++            mockSet.As<IQueryable<OneHourElectricity>>().Setup(m => m.GetEnumerator()).Returns(() => oneHourElectricity.GetEnumerator());
++            return mockSet;
++        }
++
++        private static Mock<DbSet<OneHourElectricity>> MockDayResult()
++        {
++            var oneHourElectricity = new List<OneHourElectricity>() {
++                new OneHourElectricity
++                {
++                    Id=1,
++                    PanelId = "AAAA1111BBBB2222",
++                    DateTime = new DateTime(2018,1,1),
++                    KiloWatt = 1500
++                },
++                new OneHourElectricity
++                {
++                    Id=2,
++                    PanelId = "AAAA1111BBBB2222",
++                    DateTime = new DateTime(2018,1,1),
++                    KiloWatt = 92
++                },
++                new OneHourElectricity
++                {
++                    Id=3,
++                    PanelId = "AAAA1111BBBB2222",
++                    DateTime = new DateTime(2018,1,1),
++                    KiloWatt = 340
++                },
++                new OneHourElectricity
++                {
++                    Id=4,
++                    PanelId = "AAAA1111BBBB2222",
++                    DateTime = new DateTime(2018,1,2),
++                    KiloWatt = 1500
++                },
++                new OneHourElectricity
++                {
++                    Id=5,
++                    PanelId = "AAAA1111BBBB2222",
++                    DateTime = new DateTime(2018,1,2),
++                    KiloWatt = 92
++                },
++                new OneHourElectricity
++                {
++                    Id=6,
++                    PanelId = "AAAA1111BBBB2222",
++                    DateTime = new DateTime(2018,1,2),
++                    KiloWatt = 340
++                }
++
++            }.AsQueryable();
++
++            var mockSet = new Mock<DbSet<OneHourElectricity>>();
++
++            mockSet.As<IAsyncEnumerable<OneHourElectricity>>()
++                .Setup(m => m.GetEnumerator())
++                .Returns(new TestAsyncEnumerator<OneHourElectricity>(oneHourElectricity.GetEnumerator()));
++
++            mockSet.As<IQueryable<Panel>>()
++                .Setup(m => m.Provider)
++                .Returns(new TestAsyncQueryProvider<OneHourElectricity>(oneHourElectricity.Provider));
++
++            mockSet.As<IQueryable<OneHourElectricity>>().Setup(m => m.Expression).Returns(oneHourElectricity.Expression);
++            mockSet.As<IQueryable<OneHourElectricity>>().Setup(m => m.ElementType).Returns(oneHourElectricity.ElementType);
++            mockSet.As<IQueryable<OneHourElectricity>>().Setup(m => m.GetEnumerator()).Returns(() => oneHourElectricity.GetEnumerator());
++            return mockSet;
++        }
++
++    }
++
++
++}
+diff --git a/CrossSolar.Tests/Providers/TestAsyncEnumerable.cs b/CrossSolar.Tests/Providers/TestAsyncEnumerable.cs
+new file mode 100644
+index 0000000..1edd8bb
+--- /dev/null
++++ b/CrossSolar.Tests/Providers/TestAsyncEnumerable.cs
+@@ -0,0 +1,23 @@
++﻿using System.Collections.Generic;
++using System.Linq;
++using System.Linq.Expressions;
++
++namespace CrossSolar.Tests.Providers
++{
++    internal class TestAsyncEnumerable<T> : EnumerableQuery<T>, IAsyncEnumerable<T>, IQueryable<T>
++    {
++        public TestAsyncEnumerable(IEnumerable<T> enumerable)
++            : base(enumerable)
++        { }
++
++        public TestAsyncEnumerable(Expression expression)
++            : base(expression)
++        { }
++
++        public IAsyncEnumerator<T> GetEnumerator() 
++            => new TestAsyncEnumerator<T>(this.AsEnumerable().GetEnumerator());
++
++        IQueryProvider IQueryable.Provider 
++            => new TestAsyncQueryProvider<T>(this);
++    }
++}
+\ No newline at end of file
+diff --git a/CrossSolar.Tests/Providers/TestAsyncEnumerator.cs b/CrossSolar.Tests/Providers/TestAsyncEnumerator.cs
+new file mode 100644
+index 0000000..d004530
+--- /dev/null
++++ b/CrossSolar.Tests/Providers/TestAsyncEnumerator.cs
+@@ -0,0 +1,23 @@
++﻿using System.Collections.Generic;
++using System.Threading;
++using System.Threading.Tasks;
++
++namespace CrossSolar.Tests.Providers
++{
++    internal class TestAsyncEnumerator<T> : IAsyncEnumerator<T>
++    {
++        private readonly IEnumerator<T> _inner;
++
++        public TestAsyncEnumerator(IEnumerator<T> inner) 
++            => _inner = inner;
++
++        public void Dispose() 
++            => _inner.Dispose();
++
++        public T Current 
++            => _inner.Current;
++
++        public Task<bool> MoveNext(CancellationToken cancellationToken) 
++            => Task.FromResult(_inner.MoveNext());
++    }
++}
+\ No newline at end of file
+diff --git a/CrossSolar.Tests/Providers/TestAsyncQueryProvider.cs b/CrossSolar.Tests/Providers/TestAsyncQueryProvider.cs
+new file mode 100644
+index 0000000..a52ab03
+--- /dev/null
++++ b/CrossSolar.Tests/Providers/TestAsyncQueryProvider.cs
+@@ -0,0 +1,35 @@
++﻿using Microsoft.EntityFrameworkCore.Query.Internal;
++using System.Collections.Generic;
++using System.Linq;
++using System.Linq.Expressions;
++using System.Threading;
++using System.Threading.Tasks;
++
++namespace CrossSolar.Tests.Providers
++{
++    internal class TestAsyncQueryProvider<TEntity> : IAsyncQueryProvider
++    {
++        private readonly IQueryProvider _inner;
++
++        internal TestAsyncQueryProvider(IQueryProvider inner) 
++            => _inner = inner;
++
++        public IQueryable CreateQuery(Expression expression) 
++            => new TestAsyncEnumerable<TEntity>(expression);
++
++        public IQueryable<TElement> CreateQuery<TElement>(Expression expression) 
++            => new TestAsyncEnumerable<TElement>(expression);
++
++        public object Execute(Expression expression) 
++            => _inner.Execute(expression);
++
++        public TResult Execute<TResult>(Expression expression) 
++            => _inner.Execute<TResult>(expression);
++
++        public IAsyncEnumerable<TResult> ExecuteAsync<TResult>(Expression expression) 
++            => new TestAsyncEnumerable<TResult>(expression);
++
++        public Task<TResult> ExecuteAsync<TResult>(Expression expression, CancellationToken cancellationToken) 
++            => Task.FromResult(Execute<TResult>(expression));
++    }
++}
+\ No newline at end of file
+diff --git a/CrossSolar/Controllers/AnalyticsController.cs b/CrossSolar/Controllers/AnalyticsController.cs
+index d2217d7..49aa3e1 100644
+--- a/CrossSolar/Controllers/AnalyticsController.cs
++++ b/CrossSolar/Controllers/AnalyticsController.cs
+@@ -24,7 +24,7 @@ namespace CrossSolar.Controllers
+         }
+ 
+         // GET panel/XXXX1111YYYY2222/analytics
+-        [HttpGet("{banelId}/[controller]")]
++        [HttpGet("{panelId}/[controller]")]
+         public async Task<IActionResult> Get([FromRoute] string panelId)
+         {
+             var panel = await _panelRepository.Query()
+@@ -52,9 +52,19 @@ namespace CrossSolar.Controllers
+         [HttpGet("{panelId}/[controller]/day")]
+         public async Task<IActionResult> DayResults([FromRoute] string panelId)
+         {
+-            var result = new List<OneDayElectricityModel>();
++            var analytics = await _analyticsRepository.Query()
++                .Where(x => x.PanelId.Equals(panelId, StringComparison.CurrentCultureIgnoreCase) && x.DateTime < new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day, 0, 0, 0)).ToListAsync();
+ 
+-            return Ok(result);
++            var dayResult = analytics.GroupBy(x => x.DateTime.Date).Select(g => new DayResult
++            {
++                Day = g.Key,
++                Count = g.Count(),
++                Sum = g.Sum(i => i.KiloWatt),
++                Min = g.Min(i => i.KiloWatt),
++                Max = g.Max(i => i.KiloWatt),
++                Avg = g.Average(i => i.KiloWatt)
++            });
++            return Ok(dayResult);
+         }
+ 
+         // POST panel/XXXX1111YYYY2222/analytics
+diff --git a/CrossSolar/Controllers/PanelController.cs b/CrossSolar/Controllers/PanelController.cs
+index 7b72543..685b53b 100644
+--- a/CrossSolar/Controllers/PanelController.cs
++++ b/CrossSolar/Controllers/PanelController.cs
+@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
+ 
+ namespace CrossSolar.Controllers
+ {
+-    [Route("[controller]")]
++    [Route("panel")]
+     public class PanelController : Controller
+     {
+         private readonly IPanelRepository _panelRepository;
+@@ -16,7 +16,7 @@ namespace CrossSolar.Controllers
+             _panelRepository = panelRepository;
+         }
+ 
+-        // POST api/panel
++        // POST panel
+         [HttpPost]
+         public async Task<IActionResult> Register([FromBody] PanelModel value)
+         {
+diff --git a/CrossSolar/CrossSolar.csproj b/CrossSolar/CrossSolar.csproj
+index 9a21b19..83ed45d 100644
+--- a/CrossSolar/CrossSolar.csproj
++++ b/CrossSolar/CrossSolar.csproj
+@@ -4,6 +4,11 @@
+     <TargetFramework>netcoreapp2.0</TargetFramework>
+   </PropertyGroup>
+ 
++  <ItemGroup>
++    <Compile Remove="Repository\DayAnalyticsRepository.cs" />
++    <Compile Remove="Repository\IDayAnalyticsRepository.cs" />
++  </ItemGroup>
++
+   <ItemGroup>
+     <Folder Include="wwwroot\" />
+   </ItemGroup>
+diff --git a/CrossSolar/Domain/DayResult.cs b/CrossSolar/Domain/DayResult.cs
+new file mode 100644
+index 0000000..de74291
+--- /dev/null
++++ b/CrossSolar/Domain/DayResult.cs
+@@ -0,0 +1,21 @@
++﻿using System;
++
++namespace CrossSolar.Domain
++{
++    public class DayResult
++    {
++        public DateTime Day { get; set; }
++
++        public string  Serial { get; set; }
++
++        public double Sum { get; set; }
++
++        public double Count { get; set; }
++
++        public double Min { get; set; }
++
++        public double Max { get; set; }
++
++        public double Avg { get; set; }
++    }
++}
+\ No newline at end of file
+diff --git a/CrossSolar/Startup.cs b/CrossSolar/Startup.cs
+index 69e76fc..a309f07 100644
+--- a/CrossSolar/Startup.cs
++++ b/CrossSolar/Startup.cs
+@@ -25,7 +25,7 @@ namespace CrossSolar
+                 options.UseSqlServer(Configuration.GetConnectionString("DefaultConnection")));
+             services.AddTransient<IPanelRepository, PanelRepository>();
+             services.AddTransient<IAnalyticsRepository, AnalyticsRepository>();
+-            services.AddTransient<IDayAnalyticsRepository, DayAnalyticsRepository>();
++            //services.AddTransient<IDayAnalyticsRepository, DayAnalyticsRepository>();
+             services.AddMvc();
+         }
+ 
+-- 
+2.16.2.windows.1
+
